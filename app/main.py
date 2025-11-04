@@ -122,7 +122,7 @@ def validate_config(config):
 if __name__ == "__main__":
     main(StepArgsBuilder()
          .input()
-         .output()
+         .output(optional=True)
          .config("useGoogleToken", optional=True)
          .config("scopes", optional=True)
          .config("headers", optional=True)
