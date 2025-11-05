@@ -3,7 +3,9 @@ import os
 import json
 import requests
 from steputil import StepArgs, StepArgsBuilder
-from .auth import get_access_token
+
+# Import auth module from same directory
+from auth import get_access_token
 
 
 def main(step: StepArgs):
