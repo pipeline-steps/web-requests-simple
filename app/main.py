@@ -1,9 +1,9 @@
 import sys
+import os
 import json
 import requests
-from google.auth import default
-from google.auth.transport.requests import Request
 from steputil import StepArgs, StepArgsBuilder
+from .auth import get_access_token
 
 
 def main(step: StepArgs):
@@ -16,20 +16,10 @@ def main(step: StepArgs):
     # Optionally add Google authentication
     if step.config.useGoogleToken:
         print("Getting credentials from Application Default Credentials (ADC)")
-        try:
-            scopes = step.config.scopes
-            if scopes:
-                print(f"Using scopes: {scopes}")
-                credentials, project = default(scopes=scopes)
-            else:
-                credentials, project = default()
-            credentials.refresh(Request())
-            token = credentials.token
-            headers['Authorization'] = f'Bearer {token}'
-            print(f"Added Bearer token to request headers")
-        except Exception as e:
-            print(f"Error during authentication: {e}", file=sys.stderr)
-            sys.exit(1)
+        scopes = step.config.scopes if step.config.scopes else []
+        token = get_access_token(scopes)
+        headers['Authorization'] = f'Bearer {token}'
+        print(f"Added Bearer token to request headers")
 
     # Read input jsonl with request information
     records = step.input.readJsons()
