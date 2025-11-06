@@ -4,11 +4,42 @@ import json
 import requests
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Semaphore, Lock
+from threading import Semaphore, Lock, Thread, Event
 from steputil import StepArgs, StepArgsBuilder
 
 # Import auth module from same directory
 from auth import get_access_token
+
+
+class ProgressTracker:
+    """Thread-safe progress tracker for monitoring request processing."""
+
+    def __init__(self, total_requests):
+        self.total_requests = total_requests
+        self.completed = 0
+        self.errors = 0
+        self.start_time = time.time()
+        self.lock = Lock()
+
+    def increment(self, is_error=False):
+        """Increment completed count and optionally error count."""
+        with self.lock:
+            self.completed += 1
+            if is_error:
+                self.errors += 1
+
+    def get_stats(self):
+        """Get current statistics."""
+        with self.lock:
+            elapsed = time.time() - self.start_time
+            requests_per_minute = (self.completed / elapsed * 60) if elapsed > 0 else 0
+            return {
+                'completed': self.completed,
+                'errors': self.errors,
+                'total': self.total_requests,
+                'elapsed': elapsed,
+                'requests_per_minute': requests_per_minute
+            }
 
 
 class RateLimiter:
@@ -39,7 +70,20 @@ class RateLimiter:
             self.last_request_time = time.time()
 
 
-def process_request(idx, record, headers, rate_limiter):
+def progress_reporter(tracker, stop_event, interval=10):
+    """Background thread that prints progress every interval seconds."""
+    while not stop_event.is_set():
+        if stop_event.wait(interval):
+            break
+        stats = tracker.get_stats()
+        print(f"Progress: {stats['completed']}/{stats['total']} requests "
+              f"({stats['errors']} errors) | "
+              f"Elapsed: {stats['elapsed']:.1f}s | "
+              f"Rate: {stats['requests_per_minute']:.1f} req/min",
+              file=sys.stderr)
+
+
+def process_request(idx, record, headers, rate_limiter, progress_tracker):
     """Process a single request and return the result."""
     # Extract request fields
     method = record.get('method', 'GET').upper()
@@ -47,7 +91,7 @@ def process_request(idx, record, headers, rate_limiter):
     body = record.get('body')
 
     if not url:
-        print(f"Warning: Request {idx + 1} missing URL, skipping", file=sys.stderr)
+        progress_tracker.increment(is_error=True)
         return None
 
     # Prepare the result entry
@@ -65,8 +109,6 @@ def process_request(idx, record, headers, rate_limiter):
 
     # Issue the request
     try:
-        print(f"Issuing {method} request to {url}...")
-
         if method in ['GET', 'DELETE']:
             response = requests.request(method, url, headers=headers)
         elif method in ['POST', 'PUT', 'PATCH']:
@@ -88,15 +130,13 @@ def process_request(idx, record, headers, rate_limiter):
             result['response']['body'] = response.text
 
         result['success'] = 200 <= response.status_code < 300
-
-        if not result['success']:
-            print(f"Request {idx + 1} returned status {response.status_code}", file=sys.stderr)
+        progress_tracker.increment(is_error=not result['success'])
 
     except Exception as e:
         result['response']['status'] = None
         result['response']['message'] = str(e)
         result['success'] = False
-        print(f"Error processing request {idx + 1}: {e}", file=sys.stderr)
+        progress_tracker.increment(is_error=True)
 
     return result
 
@@ -130,18 +170,22 @@ def main(step: StepArgs):
     else:
         print("Rate limit: disabled")
 
-    # Initialize rate limiter
+    # Initialize rate limiter and progress tracker
     rate_limiter = RateLimiter(rate_limit)
+    progress_tracker = ProgressTracker(len(records))
+
+    # Start progress reporter thread
+    stop_event = Event()
+    reporter_thread = Thread(target=progress_reporter, args=(progress_tracker, stop_event), daemon=True)
+    reporter_thread.start()
 
     results = []
-    success_count = 0
-    error_count = 0
 
     # Process requests with threading
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         # Submit all requests
         future_to_idx = {
-            executor.submit(process_request, idx, record, headers, rate_limiter): idx
+            executor.submit(process_request, idx, record, headers, rate_limiter, progress_tracker): idx
             for idx, record in enumerate(records)
         }
 
@@ -152,13 +196,13 @@ def main(step: StepArgs):
                 result = future.result()
                 if result:
                     results.append((idx, result))
-                    if result.get('success', False):
-                        success_count += 1
-                    else:
-                        error_count += 1
             except Exception as e:
-                error_count += 1
+                progress_tracker.increment(is_error=True)
                 print(f"Unexpected error processing request {idx + 1}: {e}", file=sys.stderr)
+
+    # Stop progress reporter
+    stop_event.set()
+    reporter_thread.join()
 
     # Sort results by original index to maintain order
     results.sort(key=lambda x: x[0])
@@ -171,7 +215,12 @@ def main(step: StepArgs):
     # Write output
     step.output.writeJsons(results)
 
-    print(f"Done. Processed {len(results)} requests: {success_count} successful, {error_count} errors.")
+    # Print final statistics
+    final_stats = progress_tracker.get_stats()
+    print(f"Done. Processed {final_stats['completed']}/{final_stats['total']} requests: "
+          f"{final_stats['completed'] - final_stats['errors']} successful, {final_stats['errors']} errors. "
+          f"Total time: {final_stats['elapsed']:.1f}s | "
+          f"Average rate: {final_stats['requests_per_minute']:.1f} req/min")
 
 
 def validate_config(config):
