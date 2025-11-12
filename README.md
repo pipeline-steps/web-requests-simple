@@ -48,6 +48,8 @@ The input JSONL file should contain one JSON object per line with the following 
 
 The output JSONL file contains one JSON object per line with the following structure:
 
+### Successful Response
+
 ```json
 {
   "request": {
@@ -55,13 +57,46 @@ The output JSONL file contains one JSON object per line with the following struc
     "url": "https://api.example.com/users",
     "body": {"name": "John", "email": "john@example.com"}
   },
-  "response": {
+  "result": {"id": 123, "name": "John", "email": "john@example.com"},
+  "meta": {
+    "timestamp": "2025-01-12T10:30:45.123456Z",
+    "durationMillis": 234,
     "status": 201,
-    "body": {"id": 123, "name": "John", "email": "john@example.com"}
+    "message": ""
+  }
+}
+```
+
+### Error Response (HTTP Error)
+
+```json
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.example.com/users/999"
   },
   "meta": {
     "timestamp": "2025-01-12T10:30:45.123456Z",
-    "durationMillis": 234
+    "durationMillis": 234,
+    "status": 404,
+    "message": "{\"error\": \"User not found\"}"
+  }
+}
+```
+
+### Error Response (Connection Error)
+
+```json
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.example.com/users/999"
+  },
+  "meta": {
+    "timestamp": "2025-01-12T10:30:45.123456Z",
+    "durationMillis": 156,
+    "status": null,
+    "message": "Connection timeout"
   }
 }
 ```
@@ -69,11 +104,17 @@ The output JSONL file contains one JSON object per line with the following struc
 ### Output Fields
 
 - `request`: Copy of the original request information
-- `response.status`: HTTP status code (or null if request failed)
-- `response.body`: Response body (parsed as JSON if possible, otherwise as text)
-- `response.message`: Error message (only present if request failed)
+- `result`: Response body (parsed as JSON if possible, otherwise as text). **Only present on successful requests (HTTP 2xx status codes).**
 - `meta.timestamp`: ISO 8601 timestamp (UTC) when the request was issued
 - `meta.durationMillis`: Time elapsed in milliseconds from request start to response received
+- `meta.status`: HTTP status code (or null if connection/network error occurred)
+- `meta.message`: Error message or response body (empty string on success, response body for HTTP errors 4xx/5xx, error description for connection errors)
+
+**Notes**:
+- The `result` field is omitted on errors (not null, but missing from the object)
+- Success is determined by HTTP status code: 200-299 range = success, anything else = error
+- For HTTP errors (4xx, 5xx), the response body is stored in `meta.message` instead of `result`
+- Any `@type` fields in JSON responses are automatically renamed to `type` for BigQuery compatibility
 
 ## Configuration Parameters
 

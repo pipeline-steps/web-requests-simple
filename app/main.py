@@ -87,6 +87,21 @@ def progress_reporter(tracker, stop_event, interval=10):
               file=sys.stderr)
 
 
+def replace_at_type_in_dict(obj):
+    """Recursively replace @type with type in dictionaries (for BigQuery compatibility)."""
+    if isinstance(obj, dict):
+        new_obj = {}
+        for key, value in obj.items():
+            # Replace @type key with type
+            new_key = 'type' if key == '@type' else key
+            new_obj[new_key] = replace_at_type_in_dict(value)
+        return new_obj
+    elif isinstance(obj, list):
+        return [replace_at_type_in_dict(item) for item in obj]
+    else:
+        return obj
+
+
 def process_request(idx, record, headers, rate_limiter, progress_tracker):
     """Process a single request and return the result."""
     # Extract request fields
@@ -105,7 +120,6 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
             'url': url,
             'body': body
         },
-        'response': {},
         'meta': {}
     }
 
@@ -132,24 +146,37 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
         # Calculate duration in milliseconds
         duration_millis = int((time.time() - start_time) * 1000)
 
-        # Capture response
-        result['response']['status'] = response.status_code
-
         # Try to parse response as JSON, otherwise store as text
         try:
-            result['response']['body'] = response.json()
+            response_body = response.json()
+            # Replace @type with type for BigQuery compatibility
+            response_body = replace_at_type_in_dict(response_body)
         except:
-            result['response']['body'] = response.text
+            response_body = response.text
 
-        result['success'] = 200 <= response.status_code < 300
-        progress_tracker.increment(is_error=not result['success'])
+        # Check if request was successful based on status code
+        result['meta']['status'] = response.status_code
+        is_success = 200 <= response.status_code < 300
+
+        if is_success:
+            # If successful, put response body in 'result' field and leave message empty
+            result['result'] = response_body
+            result['meta']['message'] = ''
+        else:
+            # If not successful, omit 'result' field and put response in meta.message
+            result['meta']['message'] = response_body if isinstance(response_body, str) else str(response_body)
+
+        result['success'] = is_success
+        progress_tracker.increment(is_error=not is_success)
 
     except Exception as e:
         # Calculate duration even on error
         duration_millis = int((time.time() - start_time) * 1000)
 
-        result['response']['status'] = None
-        result['response']['message'] = str(e)
+        # On error, omit 'result' field and put error in meta.message
+        # result['result'] is not set, so field is missing
+        result['meta']['status'] = None
+        result['meta']['message'] = str(e)
         result['success'] = False
         progress_tracker.increment(is_error=True)
 
