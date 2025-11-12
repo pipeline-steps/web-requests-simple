@@ -52,7 +52,7 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ```json
 {
-  "timestamp": "2025-01-12T10:30:45.123456Z",
+  "timestamp": "2025-01-12 10:30:45",
   "request": {
     "method": "POST",
     "url": "https://api.example.com/users",
@@ -71,7 +71,7 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ```json
 {
-  "timestamp": "2025-01-12T10:30:45.123456Z",
+  "timestamp": "2025-01-12 10:30:45",
   "request": {
     "method": "GET",
     "url": "https://api.example.com/users/999"
@@ -88,7 +88,7 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ```json
 {
-  "timestamp": "2025-01-12T10:30:45.123456Z",
+  "timestamp": "2025-01-12 10:30:45",
   "request": {
     "method": "GET",
     "url": "https://api.example.com/users/999"
@@ -103,7 +103,7 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ### Output Fields
 
-- `timestamp`: UTC timestamp when the request was issued (stored as datetime object for BigQuery TIMESTAMP column compatibility)
+- `timestamp`: UTC timestamp when the request was issued, formatted according to timestampFormat config parameter (default: "2025-01-12 10:30:45")
 - `request`: Copy of the original request information
 - `result`: Response body (parsed as JSON if possible, otherwise as text). **Only present on successful requests (HTTP 2xx status codes).**
 - `meta.durationMillis`: Time elapsed in milliseconds from request start to response received
@@ -126,6 +126,7 @@ The output JSONL file contains one JSON object per line with the following struc
 | headers         |          | Dictionary of custom HTTP headers to include in all requests            |
 | concurrency     |          | Number of concurrent threads for parallel request processing (default: 1) |
 | rateLimit       |          | Maximum number of requests per minute (default: 0 = no limit)           |
+| timestampFormat |          | Python datetime format string for timestamp field (default: "%Y-%m-%d %H:%M:%S") |
 
 **Notes:**
   * useGoogleToken: When enabled, the pipeline will use ADC to obtain a Google OAuth token and add it as `Authorization: Bearer <token>` header to all requests
@@ -134,6 +135,7 @@ The output JSONL file contains one JSON object per line with the following struc
   * headers: Optional dictionary of HTTP headers (e.g., `{"User-Agent": "MyApp/1.0", "Accept-Language": "en-US"}`). These headers will be merged with any authentication headers and applied to all requests.
   * concurrency: Controls how many requests can be processed simultaneously using threads. A value of 1 (default) means sequential processing. Higher values enable parallel processing. For example, concurrency of 10 allows up to 10 requests to be processed at the same time.
   * rateLimit: Controls the maximum number of requests per minute. A value of 0 (default) means no rate limiting. For example, a rateLimit of 60 allows at most 60 requests per minute (1 per second). Rate limiting works together with concurrency to prevent overwhelming APIs.
+  * timestampFormat: Format string for the timestamp field in the output. Uses Python's strftime format (e.g., "%Y-%m-%d %H:%M:%S" produces "2021-07-07 23:10:47"). Defaults to "%Y-%m-%d %H:%M:%S".
 
 ### Configuration Example
 

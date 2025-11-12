@@ -102,7 +102,7 @@ def replace_at_type_in_dict(obj):
         return obj
 
 
-def process_request(idx, record, headers, rate_limiter, progress_tracker):
+def process_request(idx, record, headers, rate_limiter, progress_tracker, timestamp_format):
     """Process a single request and return the result."""
     # Extract request fields
     method = record.get('method', 'GET').upper()
@@ -127,7 +127,7 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
     rate_limiter.acquire()
 
     # Capture timestamp before making the request
-    request_timestamp = datetime.utcnow().isoformat() + 'Z'
+    request_timestamp = datetime.utcnow().strftime(timestamp_format)
     start_time = time.time()
 
     # Issue the request
@@ -220,6 +220,9 @@ def main(step: StepArgs):
     rate_limiter = RateLimiter(rate_limit)
     progress_tracker = ProgressTracker(len(records))
 
+    # Get timestamp format
+    timestamp_format = step.config.timestampFormat
+
     # Start progress reporter thread
     stop_event = Event()
     reporter_thread = Thread(target=progress_reporter, args=(progress_tracker, stop_event), daemon=True)
@@ -231,7 +234,7 @@ def main(step: StepArgs):
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         # Submit all requests
         future_to_idx = {
-            executor.submit(process_request, idx, record, headers, rate_limiter, progress_tracker): idx
+            executor.submit(process_request, idx, record, headers, rate_limiter, progress_tracker, timestamp_format): idx
             for idx, record in enumerate(records)
         }
 
@@ -294,6 +297,7 @@ if __name__ == "__main__":
          .config("headers", optional=True)
          .config("concurrency", optional=True)
          .config("rateLimit", optional=True)
+         .config("timestampFormat", optional=True, default="%Y-%m-%d %H:%M:%S")
          .validate(validate_config)
          .build()
          )
