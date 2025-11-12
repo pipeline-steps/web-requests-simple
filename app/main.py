@@ -297,7 +297,7 @@ if __name__ == "__main__":
          .config("headers", optional=True)
          .config("concurrency", optional=True)
          .config("rateLimit", optional=True)
-         .config("timestampFormat", optional=True, default="%Y-%m-%d %H:%M:%S")
+         .config("timestampFormat", optional=True, default_value="%Y-%m-%d %H:%M:%S")
          .validate(validate_config)
          .build()
          )
