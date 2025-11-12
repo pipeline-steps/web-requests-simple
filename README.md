@@ -52,6 +52,7 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ```json
 {
+  "timestamp": "2025-01-12T10:30:45.123456Z",
   "request": {
     "method": "POST",
     "url": "https://api.example.com/users",
@@ -59,7 +60,6 @@ The output JSONL file contains one JSON object per line with the following struc
   },
   "result": {"id": 123, "name": "John", "email": "john@example.com"},
   "meta": {
-    "timestamp": "2025-01-12T10:30:45.123456Z",
     "durationMillis": 234,
     "status": 201,
     "message": ""
@@ -71,12 +71,12 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ```json
 {
+  "timestamp": "2025-01-12T10:30:45.123456Z",
   "request": {
     "method": "GET",
     "url": "https://api.example.com/users/999"
   },
   "meta": {
-    "timestamp": "2025-01-12T10:30:45.123456Z",
     "durationMillis": 234,
     "status": 404,
     "message": "{\"error\": \"User not found\"}"
@@ -88,12 +88,12 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ```json
 {
+  "timestamp": "2025-01-12T10:30:45.123456Z",
   "request": {
     "method": "GET",
     "url": "https://api.example.com/users/999"
   },
   "meta": {
-    "timestamp": "2025-01-12T10:30:45.123456Z",
     "durationMillis": 156,
     "status": null,
     "message": "Connection timeout"
@@ -103,9 +103,9 @@ The output JSONL file contains one JSON object per line with the following struc
 
 ### Output Fields
 
+- `timestamp`: UTC timestamp when the request was issued (stored as datetime object for BigQuery TIMESTAMP column compatibility)
 - `request`: Copy of the original request information
 - `result`: Response body (parsed as JSON if possible, otherwise as text). **Only present on successful requests (HTTP 2xx status codes).**
-- `meta.timestamp`: UTC timestamp when the request was issued (stored as datetime object for BigQuery TIMESTAMP column compatibility)
 - `meta.durationMillis`: Time elapsed in milliseconds from request start to response received
 - `meta.status`: HTTP status code (or null if connection/network error occurred)
 - `meta.message`: Error message or response body (empty string on success, response body for HTTP errors 4xx/5xx, error description for connection errors)

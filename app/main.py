@@ -181,7 +181,7 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
         progress_tracker.increment(is_error=True)
 
     # Add metadata
-    result['meta']['timestamp'] = request_timestamp
+    result['timestamp'] = request_timestamp
     result['meta']['durationMillis'] = duration_millis
 
     return result
