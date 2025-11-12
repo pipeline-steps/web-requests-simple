@@ -105,7 +105,7 @@ The output JSONL file contains one JSON object per line with the following struc
 
 - `request`: Copy of the original request information
 - `result`: Response body (parsed as JSON if possible, otherwise as text). **Only present on successful requests (HTTP 2xx status codes).**
-- `meta.timestamp`: ISO 8601 timestamp (UTC) when the request was issued
+- `meta.timestamp`: UTC timestamp when the request was issued (stored as datetime object for BigQuery TIMESTAMP column compatibility)
 - `meta.durationMillis`: Time elapsed in milliseconds from request start to response received
 - `meta.status`: HTTP status code (or null if connection/network error occurred)
 - `meta.message`: Error message or response body (empty string on success, response body for HTTP errors 4xx/5xx, error description for connection errors)
@@ -114,6 +114,7 @@ The output JSONL file contains one JSON object per line with the following struc
 - The `result` field is omitted on errors (not null, but missing from the object)
 - Success is determined by HTTP status code: 200-299 range = success, anything else = error
 - For HTTP errors (4xx, 5xx), the response body is stored in `meta.message` instead of `result`
+- The `timestamp` field is stored as a Python datetime object, which pandas will convert to BigQuery TIMESTAMP type
 - Any `@type` fields in JSON responses are automatically renamed to `type` for BigQuery compatibility
 
 ## Configuration Parameters
