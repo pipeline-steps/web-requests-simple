@@ -58,16 +58,22 @@ The output JSONL file contains one JSON object per line with the following struc
   "response": {
     "status": 201,
     "body": {"id": 123, "name": "John", "email": "john@example.com"}
+  },
+  "meta": {
+    "timestamp": "2025-01-12T10:30:45.123456Z",
+    "durationMillis": 234
   }
 }
 ```
 
-### Response Fields
+### Output Fields
 
 - `request`: Copy of the original request information
 - `response.status`: HTTP status code (or null if request failed)
 - `response.body`: Response body (parsed as JSON if possible, otherwise as text)
 - `response.message`: Error message (only present if request failed)
+- `meta.timestamp`: ISO 8601 timestamp (UTC) when the request was issued
+- `meta.durationMillis`: Time elapsed in milliseconds from request start to response received
 
 ## Configuration Parameters
 

@@ -3,9 +3,13 @@ import os
 import json
 import requests
 import time
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Semaphore, Lock, Thread, Event
 from steputil import StepArgs, StepArgsBuilder
+
+# Add current directory to path for imports
+sys.path.insert(0, os.path.dirname(__file__))
 
 # Import auth module from same directory
 from auth import get_access_token
@@ -101,11 +105,16 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
             'url': url,
             'body': body
         },
-        'response': {}
+        'response': {},
+        'meta': {}
     }
 
     # Apply rate limiting before making the request
     rate_limiter.acquire()
+
+    # Capture timestamp before making the request
+    request_timestamp = datetime.utcnow().isoformat() + 'Z'
+    start_time = time.time()
 
     # Issue the request
     try:
@@ -120,6 +129,9 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
         else:
             response = requests.request(method, url, headers=headers)
 
+        # Calculate duration in milliseconds
+        duration_millis = int((time.time() - start_time) * 1000)
+
         # Capture response
         result['response']['status'] = response.status_code
 
@@ -133,10 +145,17 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
         progress_tracker.increment(is_error=not result['success'])
 
     except Exception as e:
+        # Calculate duration even on error
+        duration_millis = int((time.time() - start_time) * 1000)
+
         result['response']['status'] = None
         result['response']['message'] = str(e)
         result['success'] = False
         progress_tracker.increment(is_error=True)
+
+    # Add metadata
+    result['meta']['timestamp'] = request_timestamp
+    result['meta']['durationMillis'] = duration_millis
 
     return result
 
