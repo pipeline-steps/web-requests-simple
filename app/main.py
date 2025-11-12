@@ -126,8 +126,8 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker):
     # Apply rate limiting before making the request
     rate_limiter.acquire()
 
-    # Capture timestamp before making the request (as datetime object for BigQuery compatibility)
-    request_timestamp = datetime.utcnow()
+    # Capture timestamp before making the request
+    request_timestamp = datetime.utcnow().isoformat() + 'Z'
     start_time = time.time()
 
     # Issue the request
