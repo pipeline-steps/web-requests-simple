@@ -12,7 +12,7 @@ from steputil import StepArgs, StepArgsBuilder
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Import auth module from same directory
-from auth import get_access_token
+from auth import TokenManager
 
 
 class ProgressTracker:
@@ -102,7 +102,7 @@ def replace_at_type_in_dict(obj):
         return obj
 
 
-def process_request(idx, record, headers, rate_limiter, progress_tracker, timestamp_format):
+def process_request(idx, record, headers, rate_limiter, progress_tracker, timestamp_format, token_manager=None):
     """Process a single request and return the result."""
     # Extract request fields
     method = record.get('method', 'GET').upper()
@@ -130,55 +130,76 @@ def process_request(idx, record, headers, rate_limiter, progress_tracker, timest
     request_timestamp = datetime.utcnow().strftime(timestamp_format)
     start_time = time.time()
 
-    # Issue the request
-    try:
-        if method in ['GET', 'DELETE']:
-            response = requests.request(method, url, headers=headers)
-        elif method in ['POST', 'PUT', 'PATCH']:
-            if body:
-                # Assume body is already a dict/object
-                response = requests.request(method, url, json=body, headers=headers)
-            else:
-                response = requests.request(method, url, headers=headers)
-        else:
-            response = requests.request(method, url, headers=headers)
+    # Make the request with retry logic for token expiration
+    max_retries = 1 if token_manager else 0
+    for attempt in range(max_retries + 1):
+        # Refresh headers with current token if using token manager
+        current_headers = headers.copy()
+        if token_manager and attempt > 0:
+            # On retry, force refresh the token
+            new_token = token_manager.force_refresh()
+            current_headers['Authorization'] = f'Bearer {new_token}'
+        elif token_manager:
+            # On first attempt, just get the current token (may refresh if expired)
+            current_token = token_manager.get_token()
+            current_headers['Authorization'] = f'Bearer {current_token}'
 
-        # Calculate duration in milliseconds
-        duration_millis = int((time.time() - start_time) * 1000)
-
-        # Try to parse response as JSON, otherwise store as text
+        # Issue the request
         try:
-            response_body = response.json()
-            # Replace @type with type for BigQuery compatibility
-            response_body = replace_at_type_in_dict(response_body)
-        except:
-            response_body = response.text
+            if method in ['GET', 'DELETE']:
+                response = requests.request(method, url, headers=current_headers)
+            elif method in ['POST', 'PUT', 'PATCH']:
+                if body:
+                    # Assume body is already a dict/object
+                    response = requests.request(method, url, json=body, headers=current_headers)
+                else:
+                    response = requests.request(method, url, headers=current_headers)
+            else:
+                response = requests.request(method, url, headers=current_headers)
 
-        # Check if request was successful based on status code
-        result['meta']['status'] = response.status_code
-        is_success = 200 <= response.status_code < 300
+            # Calculate duration in milliseconds
+            duration_millis = int((time.time() - start_time) * 1000)
 
-        if is_success:
-            # If successful, put response body in 'result' field and leave message empty
-            result['result'] = response_body
-            result['meta']['message'] = ''
-        else:
-            # If not successful, omit 'result' field and put response in meta.message
-            result['meta']['message'] = response_body if isinstance(response_body, str) else str(response_body)
+            # Check if we got a 401 and should retry
+            if response.status_code == 401 and attempt < max_retries:
+                print(f"Got 401 Unauthorized for request {idx + 1}, retrying with refreshed token...", file=sys.stderr)
+                continue  # Retry with refreshed token
 
-        result['success'] = is_success
-        progress_tracker.increment(is_error=not is_success)
+            # Try to parse response as JSON, otherwise store as text
+            try:
+                response_body = response.json()
+                # Replace @type with type for BigQuery compatibility
+                response_body = replace_at_type_in_dict(response_body)
+            except:
+                response_body = response.text
 
-    except Exception as e:
-        # Calculate duration even on error
-        duration_millis = int((time.time() - start_time) * 1000)
+            # Check if request was successful based on status code
+            result['meta']['status'] = response.status_code
+            is_success = 200 <= response.status_code < 300
 
-        # On error, omit 'result' field and put error in meta.message
-        # result['result'] is not set, so field is missing
-        result['meta']['status'] = None
-        result['meta']['message'] = str(e)
-        result['success'] = False
-        progress_tracker.increment(is_error=True)
+            if is_success:
+                # If successful, put response body in 'result' field and leave message empty
+                result['result'] = response_body
+                result['meta']['message'] = ''
+            else:
+                # If not successful, omit 'result' field and put response in meta.message
+                result['meta']['message'] = response_body if isinstance(response_body, str) else str(response_body)
+
+            result['success'] = is_success
+            progress_tracker.increment(is_error=not is_success)
+            break  # Exit retry loop
+
+        except Exception as e:
+            # Calculate duration even on error
+            duration_millis = int((time.time() - start_time) * 1000)
+
+            # On error, omit 'result' field and put error in meta.message
+            # result['result'] is not set, so field is missing
+            result['meta']['status'] = None
+            result['meta']['message'] = str(e)
+            result['success'] = False
+            progress_tracker.increment(is_error=True)
+            break  # Exit retry loop on exception
 
     # Add metadata
     result['timestamp'] = request_timestamp
@@ -194,13 +215,14 @@ def main(step: StepArgs):
         headers.update(step.config.headers)
         print(f"Using custom headers: {list(step.config.headers.keys())}")
 
-    # Optionally add Google authentication
+    # Optionally add Google authentication with token manager
+    token_manager = None
     if step.config.useGoogleToken:
         print("Getting credentials from Application Default Credentials (ADC)")
         scopes = step.config.scopes if step.config.scopes else []
-        token = get_access_token(scopes)
-        headers['Authorization'] = f'Bearer {token}'
-        print(f"Added Bearer token to request headers")
+        token_manager = TokenManager(scopes)
+        headers['Authorization'] = f'Bearer {token_manager.get_token()}'
+        print(f"Added Bearer token to request headers with auto-refresh capability")
 
     # Read input jsonl with request information
     records = step.input.readJsons()
@@ -234,7 +256,7 @@ def main(step: StepArgs):
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         # Submit all requests
         future_to_idx = {
-            executor.submit(process_request, idx, record, headers, rate_limiter, progress_tracker, timestamp_format): idx
+            executor.submit(process_request, idx, record, headers, rate_limiter, progress_tracker, timestamp_format, token_manager): idx
             for idx, record in enumerate(records)
         }
 
